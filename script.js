@@ -121,14 +121,26 @@ let tagNames = JSON.parse(localStorage.getItem("tagNamesData")) || {};
 // ==========================================
 
 const state = {
+  // 現在表示している画面
   activeView: "timeline",
 
+  // 2ビュー共通の「現在見ている年代」
+  currentYear: new Date().getFullYear(),
+
+  // 各ビュー固有のスクロール位置
+  timelineScrollLeft: 0,
+
+  peopleScrollTop: 0,
+
+  // 編集
   editingId: null,
 
   detailPersonId: null,
 
+  // 年表
   zoomScale: 1,
 
+  // フィルター
   searchQuery: "",
 
   categoryVisibility: {},
@@ -140,9 +152,13 @@ const state = {
   selectedTagColor: "",
 };
 
-// 年表描画後の位置計算用
+// ==========================================
+// 4. 内部制御用
+// ==========================================
+
 let timelineMeta = {
   minYear: 500,
+
   maxYear: new Date().getFullYear(),
 
   pxPerYear: config.pxPerYearBase,
@@ -150,11 +166,21 @@ let timelineMeta = {
   totalWidth: 0,
 };
 
-// scrollイベントの負荷軽減用
-let scrollAnimationFrame = null;
+let timelineScrollFrame = null;
+
+let peopleScrollFrame = null;
+
+/*
+ * プログラム側でスクロールした時、
+ * そのスクロールイベントによって
+ * currentYear が別の値に書き換わるのを防ぐ
+ */
+let suppressTimelineYearUpdate = false;
+
+let suppressPeopleYearUpdate = false;
 
 // ==========================================
-// 4. 初期データ整備
+// 5. ID整備
 // ==========================================
 
 function ensureIds() {
@@ -178,7 +204,7 @@ function ensureIds() {
 }
 
 // ==========================================
-// 5. 保存
+// 6. 保存
 // ==========================================
 
 function saveToStorage() {
@@ -188,7 +214,7 @@ function saveToStorage() {
 }
 
 // ==========================================
-// 6. 共通
+// 7. 年表示
 // ==========================================
 
 function formatYear(year) {
@@ -196,7 +222,7 @@ function formatYear(year) {
     return `BC${Math.abs(year)}`;
   }
 
-  return `${year}`;
+  return `${Math.round(year)}`;
 }
 
 function formatYearWithSuffix(year) {
@@ -204,7 +230,7 @@ function formatYearWithSuffix(year) {
     return `BC${Math.abs(year)}`;
   }
 
-  return `${year}年`;
+  return `${Math.round(year)}年`;
 }
 
 function getDeathYear(person) {
@@ -224,7 +250,7 @@ function getPersonById(id) {
 }
 
 // ==========================================
-// 7. フィルター
+// 8. 表示人物
 // ==========================================
 
 function getVisiblePeople() {
@@ -233,20 +259,20 @@ function getVisiblePeople() {
 
     const query = String(state.searchQuery || "").toLowerCase();
 
-    const searchMatch = name.includes(query);
+    const matchSearch = name.includes(query);
 
-    const categoryMatch = state.categoryVisibility[person.category] !== false;
+    const matchCategory = state.categoryVisibility[person.category] !== false;
 
     const tagKey = person.tagColor || "none";
 
-    const tagMatch = state.tagVisibility[tagKey] !== false;
+    const matchTag = state.tagVisibility[tagKey] !== false;
 
-    return searchMatch && categoryMatch && tagMatch;
+    return matchSearch && matchCategory && matchTag;
   });
 }
 
 // ==========================================
-// 8. 年表の範囲
+// 9. 年表全体の範囲
 // ==========================================
 
 function getTimelineBounds() {
@@ -276,7 +302,7 @@ function getTimelineBounds() {
 }
 
 // ==========================================
-// 9. 年 → X座標
+// 10. 年 → X
 // ==========================================
 
 function yearToX(year) {
@@ -284,7 +310,7 @@ function yearToX(year) {
 }
 
 // ==========================================
-// 10. 年代目盛り
+// 11. 目盛り間隔
 // ==========================================
 
 function getYearStep(pxPerYear) {
@@ -302,14 +328,14 @@ function getYearStep(pxPerYear) {
 }
 
 // ==========================================
-// 11. 現在画面中央の年
+// 12. 年表中央の年代
 // ==========================================
 
-function getCenterYear() {
+function getTimelineCenterYear() {
   const scroller = document.getElementById("timeline-scroll");
 
   if (!scroller || !timelineMeta.pxPerYear) {
-    return null;
+    return state.currentYear;
   }
 
   const centerX = scroller.scrollLeft + scroller.clientWidth / 2;
@@ -318,10 +344,48 @@ function getCenterYear() {
 }
 
 // ==========================================
-// 12. 年表描画
+// 13. currentYear更新
 // ==========================================
 
-function renderTimeline(centerYearToRestore = null) {
+function setCurrentYear(year) {
+  if (year === null || year === undefined || Number.isNaN(year)) {
+    return;
+  }
+
+  state.currentYear = year;
+
+  updateEraSummary();
+}
+
+// ==========================================
+// 14. 時代表示
+// ==========================================
+
+function updateEraSummary() {
+  const year = state.currentYear;
+
+  const era = config.eras.find((item) => year >= item.start && year < item.end);
+
+  const title = document.getElementById("era-title");
+
+  const range = document.getElementById("era-range");
+
+  if (era) {
+    title.textContent = `${era.name}時代`;
+
+    range.textContent = `${formatYear(era.start)} – ${formatYear(era.end)} ・ ${formatYearWithSuffix(year)}頃`;
+  } else {
+    title.textContent = `${formatYearWithSuffix(year)}頃`;
+
+    range.textContent = "歴史年表";
+  }
+}
+
+// ==========================================
+// 15. 年表描画
+// ==========================================
+
+function renderTimeline() {
   const axis = document.getElementById("timeline-axis");
 
   const canvas = document.getElementById("timeline-canvas");
@@ -335,7 +399,9 @@ function renderTimeline(centerYearToRestore = null) {
   }
 
   axis.innerHTML = "";
+
   eraContainer.innerHTML = "";
+
   barsContainer.innerHTML = "";
 
   const bounds = getTimelineBounds();
@@ -358,13 +424,13 @@ function renderTimeline(centerYearToRestore = null) {
 
   canvas.style.width = `${totalWidth}px`;
 
-  // ==========================================
-  // 年代
-  // ==========================================
+  // ==============================
+  // 年代目盛り
+  // ==============================
 
   const step = getYearStep(pxPerYear);
 
-  let firstTick = Math.ceil(bounds.minYear / step) * step;
+  const firstTick = Math.ceil(bounds.minYear / step) * step;
 
   for (let year = firstTick; year <= bounds.maxYear; year += step) {
     const label = document.createElement("div");
@@ -382,9 +448,9 @@ function renderTimeline(centerYearToRestore = null) {
     axis.appendChild(label);
   }
 
-  // ==========================================
-  // 人物配置
-  // ==========================================
+  // ==============================
+  // 人物
+  // ==============================
 
   const visiblePeople = getVisiblePeople()
     .slice()
@@ -399,10 +465,6 @@ function renderTimeline(centerYearToRestore = null) {
 
     const actualWidth = Math.max(2, (endYear - person.birth) * pxPerYear);
 
-    /*
-     * ズームアウト時でも人物名を
-     * タップできるように最低幅を確保
-     */
     const displayWidth = Math.max(62, actualWidth);
 
     let rowIndex = 0;
@@ -442,9 +504,6 @@ function renderTimeline(centerYearToRestore = null) {
 
     content.appendChild(name);
 
-    /*
-     * 十分な幅がある時のみ生没年を表示
-     */
     if (displayWidth >= 100) {
       const years = document.createElement("div");
 
@@ -471,25 +530,17 @@ function renderTimeline(centerYearToRestore = null) {
       openPersonDetail(person);
     });
 
-    /*
-     * PCではhover情報も残す
-     */
     bar.addEventListener("mouseenter", (event) => {
       showTooltip(event, person);
     });
 
-    bar.addEventListener("mousemove", (event) => {
-      moveTooltip(event);
-    });
+    bar.addEventListener("mousemove", moveTooltip);
 
     bar.addEventListener("mouseleave", hideTooltip);
 
     barsContainer.appendChild(bar);
   });
 
-  /*
-   * 行数に合わせて高さを決定
-   */
   const contentHeight = Math.max(430, rows.length * config.rowHeight + 70);
 
   canvas.style.height = `${contentHeight}px`;
@@ -498,9 +549,9 @@ function renderTimeline(centerYearToRestore = null) {
 
   barsContainer.style.height = `${contentHeight}px`;
 
-  // ==========================================
+  // ==============================
   // 時代背景
-  // ==========================================
+  // ==============================
 
   config.eras.forEach((era) => {
     const start = Math.max(bounds.minYear, era.start);
@@ -521,10 +572,6 @@ function renderTimeline(centerYearToRestore = null) {
 
     region.style.backgroundColor = era.color;
 
-    /*
-     * 時代がある程度広く見える時だけ
-     * 背景にも名称表示
-     */
     if ((end - start) * pxPerYear > 80) {
       const label = document.createElement("span");
 
@@ -538,9 +585,9 @@ function renderTimeline(centerYearToRestore = null) {
     eraContainer.appendChild(region);
   });
 
-  // ==========================================
+  // ==============================
   // 今日
-  // ==========================================
+  // ==============================
 
   const currentYear = new Date().getFullYear();
 
@@ -565,21 +612,10 @@ function renderTimeline(centerYearToRestore = null) {
 
     eraContainer.appendChild(label);
   }
-
-  /*
-   * ズーム前の中央年代を維持
-   */
-  if (centerYearToRestore !== null) {
-    requestAnimationFrame(() => {
-      scrollToYear(centerYearToRestore, false);
-    });
-  } else {
-    updateEraSummary();
-  }
 }
 
 // ==========================================
-// 13. 人物一覧
+// 16. 人物一覧描画
 // ==========================================
 
 function renderPeopleList() {
@@ -609,6 +645,12 @@ function renderPeopleList() {
     button.type = "button";
 
     button.className = "person-list-card";
+
+    button.id = `person-card-${person.id}`;
+
+    button.dataset.personId = person.id;
+
+    button.dataset.birth = person.birth;
 
     button.style.setProperty(
       "--category-color",
@@ -645,12 +687,9 @@ function renderPeopleList() {
 
     meta.className = "person-list-meta";
 
-    const categoryChip = createMetaChip(
-      person.category,
-      config.categoryColors[person.category],
+    meta.appendChild(
+      createMetaChip(person.category, config.categoryColors[person.category]),
     );
-
-    meta.appendChild(categoryChip);
 
     if (person.tagColor) {
       const tagLabel = tagNames[person.tagColor] || "タグ";
@@ -679,7 +718,7 @@ function renderPeopleList() {
 }
 
 // ==========================================
-// 14. メタチップ
+// 17. メタ情報チップ
 // ==========================================
 
 function createMetaChip(label, color = null) {
@@ -707,72 +746,237 @@ function createMetaChip(label, color = null) {
 }
 
 // ==========================================
-// 15. 時代表示更新
+// 18. 年表を指定年代へ移動
 // ==========================================
 
-function updateEraSummary() {
+function scrollTimelineToYear(year, smooth = false) {
   const scroller = document.getElementById("timeline-scroll");
 
-  if (!scroller || !timelineMeta.pxPerYear) {
+  if (!scroller) {
     return;
   }
 
-  const centerX = scroller.scrollLeft + scroller.clientWidth / 2;
+  const x = yearToX(year);
 
-  const centerYear = timelineMeta.minYear + centerX / timelineMeta.pxPerYear;
+  const targetLeft = Math.max(0, x - scroller.clientWidth / 2);
 
-  const era = config.eras.find(
-    (item) => centerYear >= item.start && centerYear < item.end,
-  );
-
-  const eraTitle = document.getElementById("era-title");
-
-  const eraRange = document.getElementById("era-range");
-
-  if (era) {
-    eraTitle.textContent = `${era.name}時代`;
-
-    eraRange.textContent = `${formatYear(era.start)} – ${formatYear(era.end)}`;
-  } else {
-    eraTitle.textContent = `${formatYear(Math.round(centerYear))}年頃`;
-
-    eraRange.textContent = "歴史年表";
-  }
-}
-
-// ==========================================
-// 16. 年代へ移動
-// ==========================================
-
-function scrollToYear(year, smooth = true) {
-  const scroller = document.getElementById("timeline-scroll");
-
-  const targetX = yearToX(year) - scroller.clientWidth / 2;
+  suppressTimelineYearUpdate = true;
 
   scroller.scrollTo({
-    left: Math.max(0, targetX),
+    left: targetLeft,
 
     behavior: smooth ? "smooth" : "auto",
+  });
+
+  state.timelineScrollLeft = targetLeft;
+
+  /*
+   * autoスクロールで発生する
+   * scrollイベントを無視した後、
+   * 通常モードへ戻す
+   */
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      suppressTimelineYearUpdate = false;
+    });
   });
 }
 
 // ==========================================
-// 17. 今日へ
+// 19. 年代に最適な人物を探す
 // ==========================================
 
-function scrollToToday() {
-  switchView("timeline");
+function findBestPersonForYear(year) {
+  const visiblePeople = getVisiblePeople()
+    .slice()
+    .sort((a, b) => a.birth - b.birth);
 
-  scrollToYear(new Date().getFullYear());
+  if (visiblePeople.length === 0) {
+    return null;
+  }
 
-  closeSheets();
+  /*
+   * まず、その年代に生存していた人物を探す
+   */
+  const alivePeople = visiblePeople.filter((person) => {
+    const death = getDeathYear(person);
+
+    return person.birth <= year && death >= year;
+  });
+
+  if (alivePeople.length > 0) {
+    /*
+     * 生存者の中では、
+     * その年代に最も近く生まれた人物
+     */
+    return alivePeople.reduce((best, person) => {
+      const bestDiff = Math.abs(best.birth - year);
+
+      const currentDiff = Math.abs(person.birth - year);
+
+      return currentDiff < bestDiff ? person : best;
+    });
+  }
+
+  /*
+   * その年代に生存している人物がいない場合は
+   * 生年が一番近い人物
+   */
+  return visiblePeople.reduce((best, person) => {
+    const bestDiff = Math.abs(best.birth - year);
+
+    const currentDiff = Math.abs(person.birth - year);
+
+    return currentDiff < bestDiff ? person : best;
+  });
 }
 
 // ==========================================
-// 18. 年表 / 人物ビュー切替
+// 20. 人物ビューを指定年代へ移動
+// ==========================================
+
+function scrollPeopleToYear(year, smooth = false) {
+  const scroller = document.getElementById("people-scroll");
+
+  if (!scroller) {
+    return;
+  }
+
+  const person = findBestPersonForYear(year);
+
+  if (!person) {
+    return;
+  }
+
+  const card = document.getElementById(`person-card-${person.id}`);
+
+  if (!card) {
+    return;
+  }
+
+  const scrollerRect = scroller.getBoundingClientRect();
+
+  const cardRect = card.getBoundingClientRect();
+
+  /*
+   * 現在位置から必要な差分を計算し、
+   * 対象人物が画面中央に来るようにする
+   */
+  const cardCenter =
+    cardRect.top - scrollerRect.top + scroller.scrollTop + cardRect.height / 2;
+
+  const targetTop = Math.max(0, cardCenter - scroller.clientHeight / 2);
+
+  suppressPeopleYearUpdate = true;
+
+  scroller.scrollTo({
+    top: targetTop,
+
+    behavior: smooth ? "smooth" : "auto",
+  });
+
+  state.peopleScrollTop = targetTop;
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      suppressPeopleYearUpdate = false;
+    });
+  });
+}
+
+// ==========================================
+// 21. 人物ビュー中央の人物から年代取得
+// ==========================================
+
+function getPeopleCenterYear() {
+  const scroller = document.getElementById("people-scroll");
+
+  if (!scroller) {
+    return state.currentYear;
+  }
+
+  const cards = Array.from(document.querySelectorAll(".person-list-card"));
+
+  if (cards.length === 0) {
+    return state.currentYear;
+  }
+
+  const scrollerRect = scroller.getBoundingClientRect();
+
+  const centerY = scrollerRect.top + scrollerRect.height / 2;
+
+  let closestCard = null;
+
+  let closestDistance = Infinity;
+
+  cards.forEach((card) => {
+    const rect = card.getBoundingClientRect();
+
+    const cardCenter = rect.top + rect.height / 2;
+
+    const distance = Math.abs(cardCenter - centerY);
+
+    if (distance < closestDistance) {
+      closestDistance = distance;
+
+      closestCard = card;
+    }
+  });
+
+  if (!closestCard) {
+    return state.currentYear;
+  }
+
+  return parseFloat(closestCard.dataset.birth);
+}
+
+// ==========================================
+// 22. 現ビューの状態を保存
+// ==========================================
+
+function captureCurrentViewState() {
+  if (state.activeView === "timeline") {
+    const scroller = document.getElementById("timeline-scroll");
+
+    if (scroller) {
+      state.timelineScrollLeft = scroller.scrollLeft;
+
+      setCurrentYear(getTimelineCenterYear());
+    }
+  }
+
+  if (state.activeView === "people") {
+    const scroller = document.getElementById("people-scroll");
+
+    if (scroller) {
+      state.peopleScrollTop = scroller.scrollTop;
+
+      setCurrentYear(getPeopleCenterYear());
+    }
+  }
+}
+
+// ==========================================
+// 23. 年表 / 人物 切替
 // ==========================================
 
 function switchView(view) {
+  if (view === state.activeView) {
+    /*
+     * 同じタブをもう一度押しても
+     * スクロール位置は変えない
+     */
+    return;
+  }
+
+  /*
+   * 切り替える直前に
+   * 「今どの年代を見ていたか」を確定
+   */
+  captureCurrentViewState();
+
+  const targetYear = state.currentYear;
+
   state.activeView = view;
 
   const timelineView = document.getElementById("timeline-view");
@@ -792,7 +996,13 @@ function switchView(view) {
 
     peopleTab.classList.remove("active");
 
-    requestAnimationFrame(updateEraSummary);
+    /*
+     * 人物ビューで見ていた年代を
+     * 年表の中央へ
+     */
+    requestAnimationFrame(() => {
+      scrollTimelineToYear(targetYear, false);
+    });
   } else {
     timelineView.classList.add("hidden");
 
@@ -802,12 +1012,40 @@ function switchView(view) {
 
     peopleTab.classList.add("active");
 
-    renderPeopleList();
+    /*
+     * 年表で見ていた年代を
+     * 人物一覧へ同期
+     */
+    requestAnimationFrame(() => {
+      scrollPeopleToYear(targetYear, false);
+    });
   }
+
+  updateEraSummary();
 }
 
 // ==========================================
-// 19. Bottom Sheet
+// 24. 今日へ
+// ==========================================
+
+function scrollToToday() {
+  const today = new Date().getFullYear();
+
+  setCurrentYear(today);
+
+  if (state.activeView !== "timeline") {
+    state.activeView = "people";
+
+    switchView("timeline");
+  } else {
+    scrollTimelineToYear(today, true);
+  }
+
+  closeSheets();
+}
+
+// ==========================================
+// 25. Bottom Sheet
 // ==========================================
 
 function openSheet(id) {
@@ -835,7 +1073,7 @@ function closeSheets() {
 }
 
 // ==========================================
-// 20. 人物詳細
+// 26. 人物詳細
 // ==========================================
 
 function openPersonDetail(person) {
@@ -870,7 +1108,7 @@ function openPersonDetail(person) {
 }
 
 // ==========================================
-// 21. 人物追加・編集
+// 27. 人物フォーム
 // ==========================================
 
 function openPersonForm(person = null) {
@@ -918,7 +1156,7 @@ function openPersonForm(person = null) {
 }
 
 // ==========================================
-// 22. 人物保存
+// 28. 人物保存
 // ==========================================
 
 function savePerson(event) {
@@ -948,8 +1186,11 @@ function savePerson(event) {
 
   const data = {
     name,
+
     birth,
+
     death,
+
     category,
 
     tagColor: state.selectedTagColor,
@@ -986,7 +1227,7 @@ function savePerson(event) {
 }
 
 // ==========================================
-// 23. 人物削除
+// 29. 人物削除
 // ==========================================
 
 function deleteCurrentPerson() {
@@ -1018,7 +1259,7 @@ function deleteCurrentPerson() {
 }
 
 // ==========================================
-// 24. タグ選択
+// 30. タグ選択
 // ==========================================
 
 function renderTagSelector() {
@@ -1026,7 +1267,6 @@ function renderTagSelector() {
 
   container.innerHTML = "";
 
-  // タグなし
   const none = document.createElement("button");
 
   none.type = "button";
@@ -1069,7 +1309,7 @@ function renderTagSelector() {
 }
 
 // ==========================================
-// 25. 検索フィルターUI
+// 31. フィルター表示
 // ==========================================
 
 function renderFilterButtons() {
@@ -1107,7 +1347,6 @@ function renderFilterButtons() {
     categoryContainer.appendChild(button);
   });
 
-  // タグ
   const tagContainer = document.getElementById("tag-filter-buttons");
 
   tagContainer.innerHTML = "";
@@ -1148,9 +1387,9 @@ function renderFilterButtons() {
     const label = tagNames[color] || "未設定";
 
     button.innerHTML = `<span
-          class="filter-chip-color"
-          style="background:${color}">
-        </span>${label}`;
+        class="filter-chip-color"
+        style="background:${color}">
+      </span>${label}`;
 
     button.addEventListener("click", () => {
       state.tagVisibility[color] = state.tagVisibility[color] === false;
@@ -1165,7 +1404,7 @@ function renderFilterButtons() {
 }
 
 // ==========================================
-// 26. フィルターリセット
+// 32. フィルターリセット
 // ==========================================
 
 function resetFilters() {
@@ -1189,7 +1428,7 @@ function resetFilters() {
 }
 
 // ==========================================
-// 27. タグ名編集
+// 33. タグ名設定
 // ==========================================
 
 function renderTagSettings() {
@@ -1227,7 +1466,7 @@ function renderTagSettings() {
 }
 
 // ==========================================
-// 28. タグ名保存
+// 34. タグ名保存
 // ==========================================
 
 function saveTagSettings() {
@@ -1247,12 +1486,12 @@ function saveTagSettings() {
 }
 
 // ==========================================
-// 29. バックアップ
+// 35. バックアップ書き出し
 // ==========================================
 
 async function exportBackup() {
   const data = {
-    version: 2,
+    version: 3,
 
     exportedAt: new Date().toISOString(),
 
@@ -1267,9 +1506,6 @@ async function exportBackup() {
     .toISOString()
     .slice(0, 10)}.json`;
 
-  /*
-   * PC Chrome / Edge
-   */
   if ("showSaveFilePicker" in window) {
     try {
       const handle = await window.showSaveFilePicker({
@@ -1300,9 +1536,6 @@ async function exportBackup() {
     }
   }
 
-  /*
-   * iPhone / Safariなど
-   */
   const blob = new Blob([json], {
     type: "application/json",
   });
@@ -1327,7 +1560,7 @@ async function exportBackup() {
 }
 
 // ==========================================
-// 30. バックアップ復元
+// 36. バックアップ復元
 // ==========================================
 
 function importBackup(file) {
@@ -1337,18 +1570,10 @@ function importBackup(file) {
     try {
       const data = JSON.parse(event.target.result);
 
-      /*
-       * 新形式
-       */
       if (data && Array.isArray(data.people)) {
         people = data.people;
 
         tagNames = data.tagNames || {};
-
-        /*
-         * 古い形式で
-         * 人物配列だけの場合も対応
-         */
       } else if (Array.isArray(data)) {
         people = data;
       } else {
@@ -1377,13 +1602,10 @@ function importBackup(file) {
 }
 
 // ==========================================
-// 31. Tooltip
+// 37. Tooltip
 // ==========================================
 
 function showTooltip(event, person) {
-  /*
-   * touch端末では表示しない
-   */
   if (window.matchMedia("(hover: none)").matches) {
     return;
   }
@@ -1419,17 +1641,33 @@ function hideTooltip() {
 }
 
 // ==========================================
-// 32. 表示更新
+// 38. 再描画
 // ==========================================
 
 function refreshViews() {
-  const centerYear = state.activeView === "timeline" ? getCenterYear() : null;
+  /*
+   * 再描画前の年代を保持
+   */
+  captureCurrentViewState();
 
-  renderTimeline(centerYear);
+  const targetYear = state.currentYear;
+
+  renderTimeline();
 
   renderPeopleList();
 
   updatePeopleCount();
+
+  /*
+   * 再描画後も現在見ている年代を維持
+   */
+  requestAnimationFrame(() => {
+    if (state.activeView === "timeline") {
+      scrollTimelineToYear(targetYear, false);
+    } else {
+      scrollPeopleToYear(targetYear, false);
+    }
+  });
 }
 
 function refreshAll() {
@@ -1441,7 +1679,7 @@ function refreshAll() {
 }
 
 // ==========================================
-// 33. 人数
+// 39. 人数
 // ==========================================
 
 function updatePeopleCount() {
@@ -1449,7 +1687,7 @@ function updatePeopleCount() {
 }
 
 // ==========================================
-// 34. 初期カテゴリ・タグ状態
+// 40. 表示状態初期化
 // ==========================================
 
 function initializeVisibility() {
@@ -1469,7 +1707,7 @@ function initializeVisibility() {
 }
 
 // ==========================================
-// 35. カテゴリselect
+// 41. カテゴリ選択
 // ==========================================
 
 function initializeCategorySelect() {
@@ -1489,7 +1727,7 @@ function initializeCategorySelect() {
 }
 
 // ==========================================
-// 36. スクロール同期
+// 42. 年表スクロール監視
 // ==========================================
 
 function initializeTimelineScroll() {
@@ -1502,11 +1740,23 @@ function initializeTimelineScroll() {
     () => {
       axisWindow.scrollLeft = scroller.scrollLeft;
 
-      if (scrollAnimationFrame) {
-        cancelAnimationFrame(scrollAnimationFrame);
+      state.timelineScrollLeft = scroller.scrollLeft;
+
+      if (suppressTimelineYearUpdate) {
+        return;
       }
 
-      scrollAnimationFrame = requestAnimationFrame(updateEraSummary);
+      if (timelineScrollFrame) {
+        cancelAnimationFrame(timelineScrollFrame);
+      }
+
+      timelineScrollFrame = requestAnimationFrame(() => {
+        if (state.activeView !== "timeline") {
+          return;
+        }
+
+        setCurrentYear(getTimelineCenterYear());
+      });
     },
     {
       passive: true,
@@ -1515,13 +1765,47 @@ function initializeTimelineScroll() {
 }
 
 // ==========================================
-// 37. イベント登録
+// 43. 人物スクロール監視
+// ==========================================
+
+function initializePeopleScroll() {
+  const scroller = document.getElementById("people-scroll");
+
+  scroller.addEventListener(
+    "scroll",
+    () => {
+      state.peopleScrollTop = scroller.scrollTop;
+
+      if (suppressPeopleYearUpdate) {
+        return;
+      }
+
+      if (peopleScrollFrame) {
+        cancelAnimationFrame(peopleScrollFrame);
+      }
+
+      peopleScrollFrame = requestAnimationFrame(() => {
+        if (state.activeView !== "people") {
+          return;
+        }
+
+        setCurrentYear(getPeopleCenterYear());
+      });
+    },
+    {
+      passive: true,
+    },
+  );
+}
+
+// ==========================================
+// 44. イベント
 // ==========================================
 
 function initializeEvents() {
-  // ------------------------------
-  // View
-  // ------------------------------
+  // ==============================
+  // Bottom Tab
+  // ==============================
 
   document.getElementById("timeline-tab").addEventListener("click", () => {
     switchView("timeline");
@@ -1531,9 +1815,9 @@ function initializeEvents() {
     switchView("people");
   });
 
-  // ------------------------------
+  // ==============================
   // 検索
-  // ------------------------------
+  // ==============================
 
   document.getElementById("open-search").addEventListener("click", () => {
     document.getElementById("search-input").value = state.searchQuery;
@@ -1553,9 +1837,9 @@ function initializeEvents() {
     .getElementById("reset-filters")
     .addEventListener("click", resetFilters);
 
-  // ------------------------------
+  // ==============================
   // 設定
-  // ------------------------------
+  // ==============================
 
   document.getElementById("open-settings").addEventListener("click", () => {
     document.getElementById("zoom-slider").value = state.zoomScale;
@@ -1568,36 +1852,53 @@ function initializeEvents() {
     openSheet("settings-sheet");
   });
 
-  // ------------------------------
+  // ==============================
   // Zoom
-  // ------------------------------
+  // ==============================
 
   document.getElementById("zoom-slider").addEventListener("input", (event) => {
-    const centerYear = getCenterYear();
+    /*
+     * 年表を見ている時は
+     * ズーム前の中央年代を記録
+     */
+    if (state.activeView === "timeline") {
+      setCurrentYear(getTimelineCenterYear());
+    }
+
+    const targetYear = state.currentYear;
 
     state.zoomScale = parseFloat(event.target.value);
 
     document.getElementById("zoom-value").textContent =
       `${state.zoomScale.toFixed(1)}×`;
 
-    renderTimeline(centerYear);
+    renderTimeline();
+
+    /*
+     * ズームしても同じ年代を中央に維持
+     */
+    if (state.activeView === "timeline") {
+      requestAnimationFrame(() => {
+        scrollTimelineToYear(targetYear, false);
+      });
+    }
   });
 
   document
     .getElementById("jump-today")
     .addEventListener("click", scrollToToday);
 
-  // ------------------------------
+  // ==============================
   // 人物追加
-  // ------------------------------
+  // ==============================
 
   document.getElementById("add-person-button").addEventListener("click", () => {
     openPersonForm();
   });
 
-  // ------------------------------
+  // ==============================
   // 人物編集
-  // ------------------------------
+  // ==============================
 
   document
     .getElementById("detail-edit-button")
@@ -1615,9 +1916,9 @@ function initializeEvents() {
     .getElementById("delete-person-button")
     .addEventListener("click", deleteCurrentPerson);
 
-  // ------------------------------
-  // タグ設定
-  // ------------------------------
+  // ==============================
+  // タグ
+  // ==============================
 
   document.getElementById("open-tag-settings").addEventListener("click", () => {
     renderTagSettings();
@@ -1629,17 +1930,13 @@ function initializeEvents() {
     .getElementById("save-tag-settings")
     .addEventListener("click", saveTagSettings);
 
-  // ------------------------------
-  // Export
-  // ------------------------------
+  // ==============================
+  // Backup
+  // ==============================
 
   document
     .getElementById("export-button")
     .addEventListener("click", exportBackup);
-
-  // ------------------------------
-  // Import
-  // ------------------------------
 
   const importInput = document.getElementById("import-file");
 
@@ -1654,16 +1951,12 @@ function initializeEvents() {
       importBackup(file);
     }
 
-    /*
-     * 同じファイルを
-     * 再度選択できるように
-     */
     event.target.value = "";
   });
 
-  // ------------------------------
-  // Sheet閉じる
-  // ------------------------------
+  // ==============================
+  // Sheet
+  // ==============================
 
   document.querySelectorAll(".sheet-close").forEach((button) => {
     button.addEventListener("click", closeSheets);
@@ -1673,7 +1966,6 @@ function initializeEvents() {
     .getElementById("sheet-backdrop")
     .addEventListener("click", closeSheets);
 
-  // Esc
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeSheets();
@@ -1682,7 +1974,7 @@ function initializeEvents() {
 }
 
 // ==========================================
-// 38. 初期起動
+// 45. 初期化
 // ==========================================
 
 function initialize() {
@@ -1693,6 +1985,8 @@ function initialize() {
   initializeCategorySelect();
 
   initializeTimelineScroll();
+
+  initializePeopleScroll();
 
   initializeEvents();
 
@@ -1707,11 +2001,16 @@ function initialize() {
   updatePeopleCount();
 
   /*
-   * 初回は「今日」に移動
+   * 初回は今日を共通年代に設定
+   */
+  setCurrentYear(new Date().getFullYear());
+
+  /*
+   * 年表を今日に移動
    */
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      scrollToYear(new Date().getFullYear(), false);
+      scrollTimelineToYear(state.currentYear, false);
     });
   });
 }

@@ -3,7 +3,6 @@
   <head>
     <meta charset="UTF-8" />
 
-    <!-- iPhone表示で必須 -->
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
@@ -49,7 +48,7 @@
       </header>
 
       <!-- ==============================
-         現在表示中の時代
+         現在見ている年代・時代
     ============================== -->
       <section class="era-summary">
         <div id="era-title" class="era-title">歴史年表</div>
@@ -58,28 +57,15 @@
       </section>
 
       <!-- ==============================
-         年表 / 人物 切り替え
-    ============================== -->
-      <nav class="view-tabs">
-        <button id="timeline-tab" class="view-tab active" type="button">
-          年表
-        </button>
-
-        <button id="people-tab" class="view-tab" type="button">人物</button>
-      </nav>
-
-      <!-- ==============================
-         メイン
+         メインビュー
     ============================== -->
       <main class="main-content">
-        <!-- 年表ビュー -->
-        <section id="timeline-view" class="view-panel">
-          <!-- 年代 -->
+        <!-- 年表 -->
+        <section id="timeline-view" class="view-panel timeline-view">
           <div id="axis-window">
             <div id="timeline-axis"></div>
           </div>
 
-          <!-- 横スクロール部分 -->
           <div id="timeline-scroll">
             <div id="timeline-canvas">
               <div id="era-background"></div>
@@ -89,27 +75,44 @@
           </div>
         </section>
 
-        <!-- 人物一覧ビュー -->
+        <!-- 人物一覧 -->
         <section id="people-view" class="view-panel hidden">
-          <div id="people-list" class="people-list"></div>
+          <div id="people-scroll">
+            <div id="people-list" class="people-list"></div>
+          </div>
         </section>
       </main>
-
-      <!-- ==============================
-         人物追加ボタン
-    ============================== -->
-      <button
-        id="add-person-button"
-        class="fab"
-        type="button"
-        aria-label="人物を追加"
-      >
-        ＋
-      </button>
     </div>
 
+    <!-- ==============================
+       人物追加
+  ============================== -->
+    <button
+      id="add-person-button"
+      class="fab"
+      type="button"
+      aria-label="人物を追加"
+    >
+      ＋
+    </button>
+
+    <!-- ==============================
+       Bottom Tab Bar
+  ============================== -->
+    <nav class="bottom-tab-bar" aria-label="表示切り替え">
+      <button id="timeline-tab" class="bottom-tab active" type="button">
+        <span class="tab-icon timeline-icon"></span>
+        <span class="tab-label">年表</span>
+      </button>
+
+      <button id="people-tab" class="bottom-tab" type="button">
+        <span class="tab-icon people-icon"></span>
+        <span class="tab-label">人物</span>
+      </button>
+    </nav>
+
     <!-- ==========================================
-       Bottom Sheet 共通背景
+       Bottom Sheet 背景
   =========================================== -->
     <div id="sheet-backdrop" class="sheet-backdrop hidden"></div>
 
@@ -171,7 +174,6 @@
       <div class="sheet-header">
         <div>
           <h2 id="detail-name">人物名</h2>
-
           <p id="detail-years"></p>
         </div>
 
@@ -204,7 +206,7 @@
     </section>
 
     <!-- ==========================================
-       人物追加 / 編集
+       人物追加・編集
   =========================================== -->
     <section id="person-form-sheet" class="bottom-sheet tall hidden">
       <div class="sheet-handle"></div>
@@ -301,7 +303,6 @@
       </div>
 
       <div class="sheet-body">
-        <!-- 年表設定 -->
         <div class="setting-section">
           <div class="section-title">年表</div>
 
@@ -323,13 +324,11 @@
           <div id="zoom-value" class="zoom-value">1.0×</div>
 
           <button id="jump-today" class="settings-row-button" type="button">
-            <span> 今日へ移動 </span>
-
-            <span> → </span>
+            <span>今日へ移動</span>
+            <span>→</span>
           </button>
         </div>
 
-        <!-- タグ -->
         <div class="setting-section">
           <div class="section-title">タグ</div>
 
@@ -338,26 +337,22 @@
             class="settings-row-button"
             type="button"
           >
-            <span> タグ名を編集 </span>
-
-            <span> → </span>
+            <span>タグ名を編集</span>
+            <span>→</span>
           </button>
         </div>
 
-        <!-- データ -->
         <div class="setting-section">
           <div class="section-title">データ</div>
 
           <button id="export-button" class="settings-row-button" type="button">
-            <span> バックアップを書き出す </span>
-
-            <span> → </span>
+            <span>バックアップを書き出す</span>
+            <span>→</span>
           </button>
 
           <button id="import-button" class="settings-row-button" type="button">
-            <span> バックアップから復元 </span>
-
-            <span> → </span>
+            <span>バックアップから復元</span>
+            <span>→</span>
           </button>
 
           <input
@@ -377,7 +372,7 @@
     </section>
 
     <!-- ==========================================
-       タグ名設定
+       タグ設定
   =========================================== -->
     <section id="tag-settings-sheet" class="bottom-sheet tall hidden">
       <div class="sheet-handle"></div>
@@ -404,9 +399,6 @@
       </div>
     </section>
 
-    <!-- ==========================================
-       PC用 hover tooltip
-  =========================================== -->
     <div id="tooltip" class="tooltip"></div>
 
     <script src="script.js"></script>
