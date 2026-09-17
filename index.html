@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+
+    <!-- iPhone表示で必須 -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+
+    <meta name="theme-color" content="#f7f7f5" />
+
+    <title>歴史人物タイムライン</title>
+
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body>
+    <div class="app">
+      <!-- ==============================
+         ヘッダー
+    ============================== -->
+      <header class="app-header">
+        <div class="app-title-area">
+          <h1>歴史人物</h1>
+          <span class="app-subtitle">TIMELINE</span>
+        </div>
+
+        <div class="header-actions">
+          <button
+            id="open-search"
+            class="icon-button"
+            type="button"
+            aria-label="検索・絞り込み"
+          >
+            🔍
+          </button>
+
+          <button
+            id="open-settings"
+            class="icon-button"
+            type="button"
+            aria-label="設定"
+          >
+            ⚙️
+          </button>
+        </div>
+      </header>
+
+      <!-- ==============================
+         現在表示中の時代
+    ============================== -->
+      <section class="era-summary">
+        <div id="era-title" class="era-title">歴史年表</div>
+
+        <div id="era-range" class="era-range">年代を移動して人物を探す</div>
+      </section>
+
+      <!-- ==============================
+         年表 / 人物 切り替え
+    ============================== -->
+      <nav class="view-tabs">
+        <button id="timeline-tab" class="view-tab active" type="button">
+          年表
+        </button>
+
+        <button id="people-tab" class="view-tab" type="button">人物</button>
+      </nav>
+
+      <!-- ==============================
+         メイン
+    ============================== -->
+      <main class="main-content">
+        <!-- 年表ビュー -->
+        <section id="timeline-view" class="view-panel">
+          <!-- 年代 -->
+          <div id="axis-window">
+            <div id="timeline-axis"></div>
+          </div>
+
+          <!-- 横スクロール部分 -->
+          <div id="timeline-scroll">
+            <div id="timeline-canvas">
+              <div id="era-background"></div>
+
+              <div id="timeline-bars"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 人物一覧ビュー -->
+        <section id="people-view" class="view-panel hidden">
+          <div id="people-list" class="people-list"></div>
+        </section>
+      </main>
+
+      <!-- ==============================
+         人物追加ボタン
+    ============================== -->
+      <button
+        id="add-person-button"
+        class="fab"
+        type="button"
+        aria-label="人物を追加"
+      >
+        ＋
+      </button>
+    </div>
+
+    <!-- ==========================================
+       Bottom Sheet 共通背景
+  =========================================== -->
+    <div id="sheet-backdrop" class="sheet-backdrop hidden"></div>
+
+    <!-- ==========================================
+       検索・フィルター
+  =========================================== -->
+    <section id="search-sheet" class="bottom-sheet hidden">
+      <div class="sheet-handle"></div>
+
+      <div class="sheet-header">
+        <div>
+          <h2>検索・絞り込み</h2>
+          <p>表示する人物を絞り込みます</p>
+        </div>
+
+        <button class="sheet-close" type="button">×</button>
+      </div>
+
+      <div class="sheet-body">
+        <div class="setting-section">
+          <label for="search-input" class="field-label"> 人物を検索 </label>
+
+          <div class="search-box">
+            <span>🔍</span>
+
+            <input
+              id="search-input"
+              type="search"
+              placeholder="名前で検索"
+              autocomplete="off"
+            />
+          </div>
+        </div>
+
+        <div class="setting-section">
+          <div class="section-title">カテゴリ</div>
+
+          <div id="category-buttons" class="filter-grid"></div>
+        </div>
+
+        <div class="setting-section">
+          <div class="section-title">タグ</div>
+
+          <div id="tag-filter-buttons" class="filter-grid"></div>
+        </div>
+
+        <button id="reset-filters" class="full-button secondary" type="button">
+          絞り込みを解除
+        </button>
+      </div>
+    </section>
+
+    <!-- ==========================================
+       人物詳細
+  =========================================== -->
+    <section id="person-detail-sheet" class="bottom-sheet hidden">
+      <div class="sheet-handle"></div>
+
+      <div class="sheet-header">
+        <div>
+          <h2 id="detail-name">人物名</h2>
+
+          <p id="detail-years"></p>
+        </div>
+
+        <button class="sheet-close" type="button">×</button>
+      </div>
+
+      <div class="sheet-body">
+        <div id="detail-meta" class="detail-meta"></div>
+
+        <div class="detail-period">
+          <div class="period-line"></div>
+
+          <div id="detail-period-text" class="period-text"></div>
+        </div>
+
+        <div class="detail-section">
+          <div class="section-title">メモ</div>
+
+          <div id="detail-memo" class="detail-memo"></div>
+        </div>
+
+        <button
+          id="detail-edit-button"
+          class="full-button primary"
+          type="button"
+        >
+          編集する
+        </button>
+      </div>
+    </section>
+
+    <!-- ==========================================
+       人物追加 / 編集
+  =========================================== -->
+    <section id="person-form-sheet" class="bottom-sheet tall hidden">
+      <div class="sheet-handle"></div>
+
+      <div class="sheet-header sticky-sheet-header">
+        <div>
+          <h2 id="person-form-title">人物を追加</h2>
+
+          <p id="person-form-status">年表に新しい人物を追加します</p>
+        </div>
+
+        <button class="sheet-close" type="button">×</button>
+      </div>
+
+      <form id="person-form" class="sheet-body">
+        <div class="form-field">
+          <label for="person-name"> 名前 </label>
+
+          <input id="person-name" type="text" required />
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="person-birth"> 生年 </label>
+
+            <input
+              id="person-birth"
+              type="number"
+              inputmode="numeric"
+              placeholder="紀元前はマイナス"
+              required
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="person-death"> 没年 </label>
+
+            <input
+              id="person-death"
+              type="number"
+              inputmode="numeric"
+              placeholder="存命は空欄"
+            />
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label for="person-category"> カテゴリ </label>
+
+          <select id="person-category"></select>
+        </div>
+
+        <div class="form-field">
+          <label> カラータグ </label>
+
+          <div id="tag-color-selector" class="tag-selector"></div>
+        </div>
+
+        <div class="form-field">
+          <label for="person-memo"> メモ </label>
+
+          <textarea
+            id="person-memo"
+            rows="5"
+            placeholder="人物についてのメモ"
+          ></textarea>
+        </div>
+
+        <button type="submit" class="full-button primary">保存</button>
+
+        <button
+          id="delete-person-button"
+          type="button"
+          class="full-button danger hidden"
+        >
+          この人物を削除
+        </button>
+      </form>
+    </section>
+
+    <!-- ==========================================
+       設定
+  =========================================== -->
+    <section id="settings-sheet" class="bottom-sheet hidden">
+      <div class="sheet-handle"></div>
+
+      <div class="sheet-header">
+        <div>
+          <h2>設定</h2>
+          <p>表示・データ管理</p>
+        </div>
+
+        <button class="sheet-close" type="button">×</button>
+      </div>
+
+      <div class="sheet-body">
+        <!-- 年表設定 -->
+        <div class="setting-section">
+          <div class="section-title">年表</div>
+
+          <div class="zoom-row">
+            <span class="zoom-symbol"> − </span>
+
+            <input
+              type="range"
+              id="zoom-slider"
+              min="0.1"
+              max="5"
+              step="0.1"
+              value="1"
+            />
+
+            <span class="zoom-symbol"> ＋ </span>
+          </div>
+
+          <div id="zoom-value" class="zoom-value">1.0×</div>
+
+          <button id="jump-today" class="settings-row-button" type="button">
+            <span> 今日へ移動 </span>
+
+            <span> → </span>
+          </button>
+        </div>
+
+        <!-- タグ -->
+        <div class="setting-section">
+          <div class="section-title">タグ</div>
+
+          <button
+            id="open-tag-settings"
+            class="settings-row-button"
+            type="button"
+          >
+            <span> タグ名を編集 </span>
+
+            <span> → </span>
+          </button>
+        </div>
+
+        <!-- データ -->
+        <div class="setting-section">
+          <div class="section-title">データ</div>
+
+          <button id="export-button" class="settings-row-button" type="button">
+            <span> バックアップを書き出す </span>
+
+            <span> → </span>
+          </button>
+
+          <button id="import-button" class="settings-row-button" type="button">
+            <span> バックアップから復元 </span>
+
+            <span> → </span>
+          </button>
+
+          <input
+            id="import-file"
+            class="hidden"
+            type="file"
+            accept=".json,application/json"
+          />
+
+          <div class="data-count">
+            登録人物
+            <strong id="people-count">0</strong>
+            人
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+       タグ名設定
+  =========================================== -->
+    <section id="tag-settings-sheet" class="bottom-sheet tall hidden">
+      <div class="sheet-handle"></div>
+
+      <div class="sheet-header sticky-sheet-header">
+        <div>
+          <h2>タグ名を編集</h2>
+          <p>色に意味を設定できます</p>
+        </div>
+
+        <button class="sheet-close" type="button">×</button>
+      </div>
+
+      <div class="sheet-body">
+        <div id="tag-settings-list" class="tag-settings-list"></div>
+
+        <button
+          id="save-tag-settings"
+          class="full-button primary"
+          type="button"
+        >
+          保存
+        </button>
+      </div>
+    </section>
+
+    <!-- ==========================================
+       PC用 hover tooltip
+  =========================================== -->
+    <div id="tooltip" class="tooltip"></div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
